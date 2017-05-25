@@ -20,7 +20,7 @@ select(
 
 .channel.name //= .reply_to.channel.name |
 .user.name //= (.message.user.name // .previous_message.user.name // .bot_id.name) |
-.subtype = if .subtype then ":" + .subtype else "" end |
+.subtype = if .subtype then "|" + .subtype else "" end |
 
 if .text | length == 0 then del(.text) else . end |
 
