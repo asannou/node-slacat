@@ -56,7 +56,7 @@ child.on("error", err => console.error(err));
 child.on("close", code => process.exit(code));
 
 child.stdout.on("data", data => write(process.stdout, data));
-child.stderr.on("data", data => write(process.stderr, data));
+child.stderr.on("data", data => write(process.stderr, "\033[30;1;m\0" + data + "\033[0;m"));
 
 rl.on("line", (line) => {
   child.stdin.write(line + "\n");
