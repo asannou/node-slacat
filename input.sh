@@ -1,7 +1,7 @@
 #!/bin/sh
 
 channel=''
-echo '.channel .history' > /dev/stderr
+echo '.channel .history' >&2
 
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
@@ -49,7 +49,7 @@ do
   if [ "$command" = '.channel' ]
   then
     channel=$(parse_arg "$line")
-    printf "\033]0;%s\007" "$channel" > /dev/stderr
+    printf "\033]0;%s\007" "$channel" >&2
   elif [ "$command" = '.history' ]
   then
     c=$(parse_arg "$line")

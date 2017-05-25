@@ -1,5 +1,3 @@
-#!/usr/bin/env jq -r --unbuffered -f
-
 def strfts: (. | tonumber | strftime("%y%m%d%H%M%S")) + (. | split(".") | "." + .[1]);
 
 select(
