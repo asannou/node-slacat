@@ -31,7 +31,7 @@ function dumpTeamData(data) {
             const im = ims.find(im => im.user == user.id) || {};
             return "@" + user.name + parenthesis(im.unread_count_display);
         }),
-        channels.map(channel => channel.name + parenthesis(channel.unread_count_display)),
+        channels.map(channel => "#" + channel.name + parenthesis(channel.unread_count_display)),
         groups.map(group => group.name + parenthesis(group.unread_count_display))
     ];
 }
