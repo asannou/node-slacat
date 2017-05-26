@@ -24,10 +24,15 @@ function dumpTeamData(data) {
     const users = data.users.filter(obj => !obj.deleted);
     const channels = data.channels.filter(obj => obj.is_member && !obj.is_archived);
     const groups = data.groups.filter(obj => obj.is_open && !obj.is_archived);
+    const ims = data.ims;
+    const parenthesis = count => count ? "(" + count + ")" : "";
     return [
-        users.map(obj => "@" + obj.name),
-        channels.map(obj => "#" + obj.name),
-        groups.map(obj => obj.name)
+        users.map(user => {
+            const im = ims.find(im => im.user == user.id) || {};
+            return "@" + user.name + parenthesis(im.unread_count_display);
+        }),
+        channels.map(channel => channel.name + parenthesis(channel.unread_count_display)),
+        groups.map(group => group.name + parenthesis(group.unread_count_display))
     ];
 }
 
@@ -160,6 +165,21 @@ const transformStream = index => new require("stream").Transform({
     }
 });
 
+function markChannel(key, id) {
+    const URL = require("url").URL;
+    const url = new URL("https://slack.com/api/" + key + ".mark");
+    const params = url.searchParams;
+    params.set("token", process.env.SLACK_TOKEN);
+    params.set("channel", id);
+    params.set("ts", (new Date()).getTime() / 1000);
+    httpsGet(url, data => {
+        const obj = JSON.parse(data);
+        if (obj.ok) {
+            console.error("channel marked");
+        }
+    });
+}
+
 function getChannelsHistory(id, stream) {
     const keys = {
         "C": "channels",
@@ -181,6 +201,7 @@ function getChannelsHistory(id, stream) {
                     o.channel = id;
                     stream.write(JSON.stringify(o) + "\n");
                 });
+                markChannel(key, id);
             }
         });
     }
@@ -243,7 +264,7 @@ function createWebSocket(data, stream) {
     stream.on("finish", () => ws.close());
     ws.on("message", data => tranform.write(data + "\n"));
     ws.on("close", code => {
-        console.error(code);
+        console.error("connection closed with code " + code);
         tranform.end();
         stream.end();
     });
