@@ -186,6 +186,23 @@ function getChannelsHistory(id, stream) {
     }
 }
 
+function getActivityMentions(stream) {
+    const URL = require("url").URL;
+    const url = new URL("https://medpeer.slack.com/api/activity.mentions");
+    const params = url.searchParams;
+    params.set("token", process.env.SLACK_TOKEN);
+    params.set("count", 30);
+    httpsGet(url, data => {
+        const obj = JSON.parse(data);
+        if (obj.ok) {
+            obj.mentions.reverse().forEach(o => {
+                o.message.channel = o.channel;
+                stream.write(JSON.stringify(o.message) + "\n");
+            });
+        }
+    });
+}
+
 const validateStream = data => new require("stream").Transform({
     transform: function(chunk, encoding, callback) {
         try {
@@ -217,6 +234,8 @@ function createWebSocket(data, stream) {
         const obj = JSON.parse(chunk.toString());
         if (obj.type == "channels_history") {
             getChannelsHistory(obj.channel || "", tranform);
+        } else if (obj.type == "activity_mentions") {
+            getActivityMentions(tranform);
         } else {
             ws.send(chunk.toString());
         }

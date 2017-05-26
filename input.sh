@@ -1,7 +1,7 @@
 #!/bin/sh
 
 channel=''
-echo '.channel .history' >&2
+echo '.channel .history .activity' >&2
 
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
@@ -55,7 +55,10 @@ do
     c=$(parse_arg "$line")
     c=$(parse_channel "$c")
     [ -z "$c" ] && c=$(parse_channel "$channel")
-    echo "$c" | jq -R -c --unbuffered '{ type: "channels_history" }' | add_channel "$c"
+    jq -n -c --unbuffered '{ type: "channels_history" }' | add_channel "$c"
+  elif [ "$command" = '.activity' ]
+  then
+    jq -n -c --unbuffered '{ type: "activity_mentions" }'
   else
     c=$(parse_channel "$channel")
     t=$(parse_thread "$channel")
