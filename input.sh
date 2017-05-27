@@ -1,7 +1,7 @@
 #!/bin/sh
 
 channel=''
-echo '.channel .history .activity' >&2
+echo '.channel .history .activity .threads' >&2
 
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
@@ -59,6 +59,9 @@ do
   elif [ "$command" = '.activity' ]
   then
     jq -n -c --unbuffered '{ type: "activity_mentions" }'
+  elif [ "$command" = '.threads' ]
+  then
+    jq -n -c --unbuffered '{ type: "thread_getview" }'
   else
     c=$(parse_channel "$channel")
     t=$(parse_thread "$channel")

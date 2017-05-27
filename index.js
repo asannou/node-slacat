@@ -25,7 +25,7 @@ function dumpTeamData(data) {
     const channels = data.channels.filter(obj => obj.is_member && !obj.is_archived);
     const groups = data.groups.filter(obj => obj.is_open && !obj.is_archived);
     const ims = data.ims;
-    const parenthesis = count => count ? "(" + count + ")" : "";
+    const parenthesis = count => count ? `(${count})` : "";
     return [
         users.map(user => {
             const im = ims.find(im => im.user == user.id) || {};
@@ -110,7 +110,7 @@ function unresolveName(obj, data) {
         obj.text = obj.text.replace(re, (m, prefix, name) => {
             const id = findChannelId(prefix + name, data);
             if (id) {
-                return "<" + prefix + id + ">";
+                return `<${prefix}${id}>`;
             } else {
                 return prefix + name;
             }
@@ -167,7 +167,7 @@ const transformStream = index => new require("stream").Transform({
 
 function markChannel(key, id) {
     const URL = require("url").URL;
-    const url = new URL("https://slack.com/api/" + key + ".mark");
+    const url = new URL(`https://slack.com/api/${key}.mark`);
     const params = url.searchParams;
     params.set("token", process.env.SLACK_TOKEN);
     params.set("channel", id);
@@ -189,7 +189,7 @@ function getChannelsHistory(id, stream) {
     const key = keys[id.substr(0, 1)];
     if (key) {
         const URL = require("url").URL;
-        const url = new URL("https://slack.com/api/" + key + ".history");
+        const url = new URL(`https://slack.com/api/${key}.history`);
         const params = url.searchParams;
         params.set("token", process.env.SLACK_TOKEN);
         params.set("channel", id);
@@ -224,6 +224,27 @@ function getActivityMentions(stream) {
     });
 }
 
+function getThreadView(stream) {
+    const URL = require("url").URL;
+    const url = new URL("https://medpeer.slack.com/api/subscriptions.thread.getView");
+    const params = url.searchParams;
+    params.set("token", process.env.SLACK_TOKEN);
+    params.set("current_ts", (new Date()).getTime() / 1000);
+    httpsGet(url, data => {
+        const obj = JSON.parse(data);
+        if (obj.ok) {
+            obj.threads.forEach(thread => {
+                delete thread.root_msg.thread_ts;
+                stream.write(JSON.stringify(thread.root_msg) + "\n");
+                thread.latest_replies.forEach(reply => {
+                    reply.channel = thread.root_msg.channel;
+                    stream.write(JSON.stringify(reply) + "\n");
+                });
+            });
+        }
+    });
+}
+
 const validateStream = data => new require("stream").Transform({
     transform: function(chunk, encoding, callback) {
         try {
@@ -253,10 +274,14 @@ function createWebSocket(data, stream) {
     };
     validate.on("data", chunk => {
         const obj = JSON.parse(chunk.toString());
-        if (obj.type == "channels_history") {
-            getChannelsHistory(obj.channel || "", tranform);
-        } else if (obj.type == "activity_mentions") {
-            getActivityMentions(tranform);
+        const id = obj.channel;
+        const func = {
+            channels_history: () => id && getChannelsHistory(id, tranform),
+            activity_mentions: () => getActivityMentions(tranform),
+            thread_getview: () => getThreadView(tranform)
+        };
+        if (func[obj.type]) {
+            func[obj.type]();
         } else {
             ws.send(chunk.toString());
         }
@@ -264,7 +289,7 @@ function createWebSocket(data, stream) {
     stream.on("finish", () => ws.close());
     ws.on("message", data => tranform.write(data + "\n"));
     ws.on("close", code => {
-        console.error("connection closed with code " + code);
+        console.error(`connection closed with code ${code}`);
         tranform.end();
         stream.end();
     });
