@@ -1,7 +1,7 @@
 #!/bin/sh
 
 channel=''
-echo '.channel .history .activity .threads' >&2
+echo '.channel .history .activity .threads .restart' >&2
 
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
@@ -62,6 +62,9 @@ do
   elif [ "$command" = '.threads' ]
   then
     jq -n -c --unbuffered '{ type: "thread_getview" }'
+  elif [ "$command" = '.restart' ]
+  then
+    jq -n -c --unbuffered '{ type: "rtm_start" }'
   else
     c=$(parse_channel "$channel")
     t=$(parse_thread "$channel")

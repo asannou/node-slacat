@@ -46,19 +46,21 @@ class Slacat {
   }
 
   dumpTeamData() {
-    const users = this.team.users.filter(obj => !obj.deleted);
-    const channels = this.team.channels.filter(obj => obj.is_member && !obj.is_archived);
-    const groups = this.team.groups.filter(obj => obj.is_open && !obj.is_archived);
-    const ims = this.team.ims;
     const parenthesis = count => count ? `(${count})` : "";
-    return [
-      users.map(user => {
+    const ims = this.team.ims;
+    const users = this.team.users
+      .filter(obj => !obj.deleted)
+      .map(user => {
         const im = ims.find(im => im.user == user.id) || {};
         return "@" + user.name + parenthesis(im.unread_count_display);
-      }),
-      channels.map(channel => "#" + channel.name + parenthesis(channel.unread_count_display)),
-      groups.map(group => group.name + parenthesis(group.unread_count_display))
-    ];
+      });
+    const channels = this.team.channels
+      .filter(obj => obj.is_member && !obj.is_archived)
+      .map(channel => "#" + channel.name + parenthesis(channel.unread_count_display));
+    const groups = this.team.groups
+      .filter(obj => obj.is_open && !obj.is_archived)
+      .map(group => group.name + parenthesis(group.unread_count_display));
+    [users, channels, groups].forEach(obj => console.error(obj.join(" ")));
   }
 
   resolveName(obj) {
@@ -296,7 +298,14 @@ class Slacat {
       const func = {
         channels_history: () => id && this.getChannelsHistory(id, tranform),
         activity_mentions: () => this.getActivityMentions(tranform),
-        thread_getview: () => this.getThreadView(tranform)
+        thread_getview: () => this.getThreadView(tranform),
+        rtm_start: () => {
+          this.getTeamData(() => {
+            ws.close();
+            this.dumpTeamData();
+            this.createWebSocket(stream);
+          });
+        },
       };
       if (func[obj.type]) {
         func[obj.type]();
@@ -304,12 +313,11 @@ class Slacat {
         ws.send(chunk.toString());
       }
     });
-    stream.on("finish", () => ws.close());
+    stream.once("finish", () => ws.close());
     ws.on("message", data => tranform.write(data + "\n"));
     ws.on("close", code => {
       console.error(`connection closed with code ${code}`);
       tranform.end();
-      stream.end();
     });
     tranform.on("data", chunk => stream.push(chunk));
   }
@@ -323,8 +331,8 @@ class Slacat {
       }
     });
     this.getTeamData(() => {
-      this.dumpTeamData().forEach(obj => console.error(obj.join(" ")));
-      this.createWebSocket(stream)
+      this.dumpTeamData();
+      this.createWebSocket(stream);
     });
     return stream;
   }
@@ -346,9 +354,8 @@ class Slacat {
 
 if (require.main === module) {
   const stream = (new Slacat(process.env.SLACK_TOKEN)).createStream();
-  process.stdin
-    .pipe(stream.on("finish", () => process.stdin.end()))
-    .pipe(process.stdout);
+  stream.on("finish", () => process.stdin.end());
+  process.stdin.pipe(stream).pipe(process.stdout);
 }
 
 module.exports = Slacat;
