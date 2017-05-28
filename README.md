@@ -6,3 +6,8 @@ $ export SLACK_TOKEN=xoxp-0000000000-0000000000-000000000000-0123456789abcdef012
 $ ./rwlap.js ./client.sh
 ```
 
+or
+
+```
+$ docker run -it --rm -e SLACK_TOKEN asannou/slacat
+```
