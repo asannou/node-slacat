@@ -1,7 +1,7 @@
 #!/bin/sh
 
 channel=''
-echo '.channel .history .activity .threads .restart' >&2
+echo '.channel .create .history .activity .threads .restart' >&2
 
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
@@ -43,13 +43,19 @@ add_thread() {
   fi
 }
 
-while read line
+while IFS='' read line
 do
   command=$(parse_command "$line")
   if [ "$command" = '.channel' ]
   then
     channel=$(parse_arg "$line")
     printf "\033]0;%s\007" "$channel" >&2
+  elif [ "$command" = '.create' ]
+  then
+    c=$(parse_arg "$line")
+    c=$(parse_channel "$c")
+    [ -z "$c" ] && c=$(parse_channel "$channel")
+    jq -n -c --unbuffered '{ type: "channels_create" }' | add_channel "$c"
   elif [ "$command" = '.history' ]
   then
     c=$(parse_arg "$line")

@@ -91,54 +91,88 @@ class Slacat {
     }
   }
 
-  findChannelId(name) {
-    const keys = {
-      "@": "users",
-      "#": "channels",
-      "~": "ims"
-    };
-    let key = keys[name.substr(0, 1)];
-    if (key) {
-      name = name.substr(1);
+  openChannel(name, callback) {
+    const getTeamData = id => this.getTeamData(() => callback(id));
+    if (name.startsWith("@")) {
+      const user = this.findUser(name);
+      if (user) {
+        const im = this.findIm(user);
+        if (im) {
+          callback(im.id);
+        } else {
+          this.openIm(user.id, getTeamData);
+        }
+      } else {
+        console.error(`@${name} not found`);
+        callback();
+      }
     } else {
-      key = "groups";
+      const channel = this.findChannel(name);
+      if (channel) {
+        if (channel.is_member || channel.is_group) {
+          callback(channel.id);
+        } else {
+          this.joinChannels(name, getTeamData);
+        }
+      } else {
+        callback();
+      }
     }
-    let func = channel => channel.name == name;
-    if (key == "ims") {
+  }
+
+  findUser(name) {
+    if (name.startsWith("@")) {
+      name = name.substr(1);
       const user = this.team.users.find(user => user.name == name);
       if (user) {
-        func = im => im.user == user.id;
+        return user;
       } else {
-        console.error(`user "${name}" not found`);
+        console.error(`@${name} not found`);
         return;
       }
     }
-    const channel = this.team[key].find(func);
-    if (channel) {
-      return channel.id;
+  }
+
+  findIm(user) {
+    const im = this.team.ims.find(im => im.user == user.id);
+    if (im) {
+      return im
     } else {
-      console.error(`channel "${name}" not found`);
-      if (key == "ims") {
-      }
+      console.error(`im @${user.name} not found`);
+      return;
+    }
+  }
+
+  findChannel(name) {
+    let prefix = name.substr(0, 1);
+    let key;
+    if (prefix == "#") {
+      name = name.substr(1);
+      key = "channels";
+    } else {
+      prefix = "";
+      key = "groups";
+    }
+    const channel = this.team[key].find(channel => channel.name == name);
+    if (channel) {
+      return channel;
+    } else {
+      console.error(`${prefix}${name} not found`);
       return;
     }
   }
 
   unresolveName(obj) {
-    if (typeof obj.channel == "object") {
-      const name = obj.channel.name.replace(/^@/, "~");
-      const id = this.findChannelId(name);
-      obj.channel = id;
-    }
     if (typeof obj.text == "string") {
-      const re = /\b([@#])([-_\.a-z0-9]+)/ig;
-      obj.text = obj.text.replace(re, (m, prefix, name) => {
-        const id = this.findChannelId(prefix + name);
-        if (id) {
-          return `<${prefix}${id}>`;
-        } else {
-          return prefix + name;
-        }
+      const reUser = /(^|\s)@([-_.a-z0-9]+)/ig;
+      obj.text = obj.text.replace(reUser, (match, s, name) => {
+        const user = this.findUser(`@${name}`);
+        return user ? `${s}<@${user.id}>` : match;
+      });
+      const reChannel = /(^|\s)#([-_.a-z0-9]+)/ig;
+      obj.text = obj.text.replace(reChannel, (match, s, name) => {
+        const channel = this.findChannel(`#${name}`);
+        return channel ? `${s}<#${channel.id}>` : match;
       });
     }
   }
@@ -171,7 +205,7 @@ class Slacat {
     return JSON.stringify(obj);
   }
 
-  transformStream() {
+  createTransformStream() {
     const self = this;
     return new require("stream").Transform({
       transform: function(chunk, encoding, callback) {
@@ -185,16 +219,76 @@ class Slacat {
     });
   }
 
-  markChannel(key, id) {
+  requestApi(path, param, success, error) {
     const URL = require("url").URL;
-    const url = new URL(`https://slack.com/api/${key}.mark`);
+    const url = new URL(`https://slack.com/api/${path}`);
     const params = url.searchParams;
     params.set("token", this.token);
-    params.set("channel", id);
-    params.set("ts", (new Date()).getTime() / 1000);
+    Object.keys(param).forEach(key => params.set(key, param[key]));
     httpsGet(url, data => {
       const obj = JSON.parse(data);
-      obj.ok && console.error("channel marked");
+      if (obj.ok) {
+        success(obj);
+      } else {
+        error && error(obj)
+      }
+    });
+  }
+
+  markChannel(key, id) {
+    this.requestApi(`${key}.mark`, {
+      channel: id,
+      ts: (new Date()).getTime() / 1000
+    }, () => {
+      console.error("channel marked");
+    });
+  }
+
+  openIm(id, callback) {
+    this.requestApi("im.open", {
+      user: id
+    }, obj => {
+      console.error("im opened");
+      callback(obj.channel.id);
+    }, obj => {
+      console.error(obj.error);
+      callback();
+    });
+  }
+
+  joinChannels(name, callback) {
+    this.requestApi("channels.join", {
+      name: name
+    }, obj => {
+      console.error(`${name} joined`);
+      callback(obj.channel.id);
+    }, obj => {
+      console.error(obj.error);
+      callback();
+    });
+  }
+
+  createChannels(name, callback) {
+    this.requestApi("channels.create", {
+      name: name
+    }, obj => {
+      console.error(`${name} created`);
+      callback(obj.channel.id);
+    }, obj => {
+      console.error(obj.error);
+      callback();
+    });
+  }
+
+  createGroups(name, callback) {
+    this.requestApi("groups.create", {
+      name: name
+    }, obj => {
+      console.error(`${name} created`);
+      callback(obj.group.id);
+    }, obj => {
+      console.error(obj.error);
+      callback();
     });
   }
 
@@ -204,122 +298,161 @@ class Slacat {
       "G": "groups",
       "D": "im"
     };
-    const key = keys[id.substr(0, 1)];
+    const prefix = id.substr(0, 1);
+    const key = keys[prefix];
     if (key) {
-      const URL = require("url").URL;
-      const url = new URL(`https://slack.com/api/${key}.history`);
-      const params = url.searchParams;
-      params.set("token", this.token);
-      params.set("channel", id);
-      params.set("count", 30);
-      httpsGet(url, data => {
-        const obj = JSON.parse(data);
-        if (obj.ok) {
-          obj.messages.reverse().forEach(o => {
-            o.channel = id;
-            stream.write(JSON.stringify(o) + "\n");
-          });
-          this.markChannel(key, id);
-        }
+      this.requestApi(`${key}.history`, {
+        channel: id,
+        count: 30
+      }, obj => {
+        obj.messages.reverse().forEach(o => {
+          o.channel = id;
+          stream.write(JSON.stringify(o) + "\n");
+        });
+        this.markChannel(key, id);
+      }, obj => {
+        console.error(obj.error);
       });
     }
   }
 
   getActivityMentions(stream) {
-    const URL = require("url").URL;
-    const url = new URL("https://medpeer.slack.com/api/activity.mentions");
-    const params = url.searchParams;
-    params.set("token", this.token);
-    params.set("count", 30);
-    httpsGet(url, data => {
-      const obj = JSON.parse(data);
-      if (obj.ok) {
-        obj.mentions.reverse().forEach(o => {
-          o.message.channel = o.channel;
-          stream.write(JSON.stringify(o.message) + "\n");
-        });
-      }
+    this.requestApi("activity.mentions", {
+      count: 30
+    }, obj => {
+      obj.mentions.reverse().forEach(o => {
+        o.message.channel = o.channel;
+        stream.write(JSON.stringify(o.message) + "\n");
+      });
     });
   }
 
   getThreadView(stream) {
-    const URL = require("url").URL;
-    const url = new URL("https://medpeer.slack.com/api/subscriptions.thread.getView");
-    const params = url.searchParams;
-    params.set("token", this.token);
-    params.set("current_ts", (new Date()).getTime() / 1000);
-    httpsGet(url, data => {
-      const obj = JSON.parse(data);
-      if (obj.ok) {
-        obj.threads.forEach(thread => {
-          delete thread.root_msg.thread_ts;
-          stream.write(JSON.stringify(thread.root_msg) + "\n");
-          thread.latest_replies.forEach(reply => {
-            reply.channel = thread.root_msg.channel;
-            stream.write(JSON.stringify(reply) + "\n");
-          });
+    this.requestApi("subscriptions.thread.getView", {
+      current_ts: (new Date()).getTime() / 1000
+    }, obj => {
+      obj.threads.forEach(thread => {
+        delete thread.root_msg.thread_ts;
+        stream.write(JSON.stringify(thread.root_msg) + "\n");
+        thread.latest_replies.forEach(reply => {
+          reply.channel = thread.root_msg.channel;
+          stream.write(JSON.stringify(reply) + "\n");
         });
-      }
+      });
     });
   }
 
-  validateStream() {
+  createPrepareStream() {
     const self = this;
     return new require("stream").Transform({
       transform: function(chunk, encoding, callback) {
+        let obj;
         try {
-          const obj = JSON.parse(chunk.toString());
-          if (typeof obj.type == "string") {
-            self.unresolveName(obj);
-            self.saveSend(obj);
-            this.push(JSON.stringify(obj));
-          } else {
-            console.error("invalid object");
-          }
+          obj = JSON.parse(chunk.toString());
         } catch (e) {
           console.error(e);
+          return callback();
         }
-        callback();
+        if (typeof obj.type == "string") {
+          self.unresolveName(obj);
+          self.saveSend(obj);
+          const setChannel = id => {
+            if (id) {
+              obj.channel = id;
+            }
+            this.push(JSON.stringify(obj));
+            callback();
+          };
+          if (typeof obj.channel == "object") {
+            const name = obj.channel.name;
+            if (obj.type == "message") {
+              self.openChannel(name, setChannel);
+            } else {
+              if (name.startsWith("@")) {
+                const user = self.findUser(name);
+                const im = user && self.findIm(user) || {};
+                setChannel(im.id);
+              } else {
+                const channel = self.findChannel(name) || {};
+                setChannel(channel.id);
+              }
+            }
+          } else {
+            setChannel();
+          }
+        } else {
+          console.error("invalid object");
+          callback();
+        }
       }
     });
   };
 
-  createWebSocket(stream) {
-    const ws = new (require("ws"))(this.url);
-    const validate = this.validateStream();
-    const tranform = this.transformStream();
-    stream._write = (chunk, encoding, callback) => {
-      validate.write(chunk);
-      callback();
-    };
-    validate.on("data", chunk => {
+  createRequestStream(transform) {
+    const self = this;
+    const request = new require("stream").Transform();
+    request._transform = function(chunk, encoding, callback) {
       const obj = JSON.parse(chunk.toString());
-      const id = obj.channel;
+      const channel = obj.channel;
+      const create = () => {
+        if (typeof channel == "object") {
+          if (channel.name.startsWith("#")) {
+            self.createChannels(channel.name, () => self.getTeamData());
+          } else {
+            self.createGroups(channel.name, () => self.getTeamData());
+          }
+        }
+      };
       const func = {
-        channels_history: () => id && this.getChannelsHistory(id, tranform),
-        activity_mentions: () => this.getActivityMentions(tranform),
-        thread_getview: () => this.getThreadView(tranform),
-        rtm_start: () => {
-          this.getTeamData(() => {
-            ws.close();
-            this.dumpTeamData();
-            this.createWebSocket(stream);
-          });
+        "channels_create": create,
+        "groups_create": create,
+        "channels_history": () => {
+          if (typeof channel == "string") {
+            self.getChannelsHistory(channel, transform);
+          }
         },
+        "activity_mentions": () => self.getActivityMentions(transform),
+        "thread_getview": () => self.getThreadView(transform)
       };
       if (func[obj.type]) {
         func[obj.type]();
       } else {
+        this.push(chunk);
+      }
+      callback();
+    };
+    return request;
+  }
+
+  createWebSocket(stream) {
+    const ws = new (require("ws"))(this.url);
+    const prepare = this.createPrepareStream();
+    const transform = this.createTransformStream();
+    const request = this.createRequestStream(transform);
+    stream._write = (chunk, encoding, callback) => {
+      prepare.write(chunk);
+      callback();
+    };
+    stream.once("finish", () => ws.close());
+    prepare.pipe(request);
+    request.on("data", chunk => {
+      const obj = JSON.parse(chunk.toString());
+      if (obj.type == "rtm_start") {
+        ws.close();
+        this.getTeamData(() => {
+          this.dumpTeamData();
+          this.createWebSocket(stream);
+        });
+      } else {
         ws.send(chunk.toString());
       }
     });
-    stream.once("finish", () => ws.close());
-    ws.on("message", data => tranform.write(data + "\n"));
+    ws.on("message", data => transform.write(data + "\n"));
     ws.on("close", code => {
       console.error(`connection closed with code ${code}`);
-      tranform.end();
+      transform.end();
     });
-    tranform.on("data", chunk => stream.push(chunk));
+    transform.on("data", chunk => stream.push(chunk));
   }
 
   createStream() {
@@ -346,7 +479,7 @@ class Slacat {
       data = JSON.parse(data);
       this.team = data;
       this.indexTeamData(data);
-      callback();
+      callback && callback();
     });
   }
 
