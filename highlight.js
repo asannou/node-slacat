@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-const pattern = new RegExp(process.argv[2], "g");
+const pattern = new RegExp(process.argv[2] || process.env.SLACK_HIGHLIGHT, "g");
 
 const highlight = require("stream").Transform({
   transform: function(chunk, encoding, callback) {
