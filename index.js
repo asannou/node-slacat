@@ -186,16 +186,17 @@ class Slacat {
 
   loadSend(obj) {
     const id = obj.reply_to;
-    obj.reply_to = this.send[id] || {};
-    delete this.send[id];
+    if (typeof id == "number") {
+      obj.reply_to = this.send[id] || {};
+      delete this.send[id];
+    } else {
+      delete obj.reply_to;
+    }
   }
 
   transformChunk(chunk) {
     const obj = JSON.parse(chunk);
-    if (typeof obj.reply_to == "number") {
-      this.loadSend(obj);
-      obj.user = this.self.id;
-    }
+    this.loadSend(obj);
     walkObject(obj, o => {
       this.resolveName(o);
       Object.keys(o)
