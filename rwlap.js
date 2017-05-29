@@ -29,7 +29,7 @@ const rl = readline.createInterface({
 rl.prompt();
 
 const completify = line => {
-  line.match(/[-_.!#$%&@:a-z0-9]+/ig).forEach(term => {
+  line.match(/[-_.!#$%&@:/a-z0-9]+/ig).forEach(term => {
     if (!completions.find(c => c == term)) {
       completions.push(term);
     }

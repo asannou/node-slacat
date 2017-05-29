@@ -45,6 +45,14 @@ class Slacat {
     this.index[data.team.id] = data.team;
   }
 
+  dumpCommands() {
+    const commands = [
+      "/archive", "/away", "/dnd", "/leave", "/me",
+      "/mute", "/remind", "/shrug", "/status", "/who"
+    ];
+    console.error(commands.join(" "));
+  }
+
   dumpTeamData() {
     const parenthesis = count => count ? `(${count})` : "";
     const ims = this.team.ims;
@@ -246,6 +254,18 @@ class Slacat {
     });
   }
 
+  commandChat(channel, command, text) {
+    this.requestApi(`chat.command`, {
+      channel: channel,
+      command: command,
+      text: text
+    }, obj => {
+      console.error(obj.response || "commanded");
+    }, obj => {
+      console.error(obj.error);
+    });
+  }
+
   openIm(id, callback) {
     this.requestApi("im.open", {
       user: id
@@ -418,6 +438,9 @@ class Slacat {
       };
       if (func[obj.type]) {
         func[obj.type]();
+      } else if (obj.type == "message" && obj.text.startsWith("/")) {
+        const text = obj.text.split(" ");
+        self.commandChat(channel, text.shift(), text.join(" "));
       } else {
         this.push(chunk);
       }
@@ -466,6 +489,7 @@ class Slacat {
       }
     });
     this.getTeamData(() => {
+      this.dumpCommands();
       this.dumpTeamData();
       this.createWebSocket(stream);
     });
