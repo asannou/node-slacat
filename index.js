@@ -195,6 +195,8 @@ class Slacat {
     if (typeof obj.reply_to == "number") {
       this.loadSend(obj);
       obj.user = this.self.id;
+    } else {
+      delete obj.reply_to;
     }
     walkObject(obj, o => {
       this.resolveName(o);
