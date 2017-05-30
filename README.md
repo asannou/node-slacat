@@ -12,3 +12,5 @@ or
 ```
 $ docker run -it --rm -e SLACK_TOKEN -e SLACK_HIGHLIGHT asannou/slacat
 ```
+
+![demo](chikuwa.gif)
