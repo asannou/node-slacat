@@ -8,7 +8,7 @@ function slurpStream(stream, callback) {
 }
 
 function httpsGet(url, callback) {
-  return require("https").get(url, res => slurpStream(res, callback));
+  require("https").get(url, res => slurpStream(res, callback));
 }
 
 function walkObject(obj, callback) {
@@ -32,8 +32,6 @@ class Slacat {
 
   constructor(token) {
     this.token = token;
-    this.send = {};
-    this.sendId = 1;
   }
 
   indexTeamData(data) {
@@ -185,6 +183,11 @@ class Slacat {
     }
   }
 
+  initSend() {
+    this.send = {};
+    this.sendId = 1;
+  }
+
   saveSend(obj) {
     const max = 100;
     obj.id = this.sendId;
@@ -194,17 +197,25 @@ class Slacat {
 
   loadSend(obj) {
     const id = obj.reply_to;
-    obj.reply_to = this.send[id] || {};
-    delete this.send[id];
+    if (typeof id == "number") {
+      obj.reply_to = this.send[id];
+      delete this.send[id];
+      obj.user = this.self.id;
+    } else {
+      delete obj.reply_to;
+    }
+    return obj.reply_to;
   }
 
   transformChunk(chunk) {
     const obj = JSON.parse(chunk);
-    if (typeof obj.reply_to == "number") {
-      this.loadSend(obj);
-      obj.user = this.self.id;
-    } else {
-      delete obj.reply_to;
+    if (obj.reply_to && !this.loadSend(obj)) {
+      return;
+    }
+    if (obj.type == "pong") {
+      clearTimeout(obj.reply_to.timeout);
+      delete obj.reply_to.timeout;
+      return;
     }
     walkObject(obj, o => {
       this.resolveName(o);
@@ -220,13 +231,23 @@ class Slacat {
     return new require("stream").Transform({
       transform: function(chunk, encoding, callback) {
         try {
-          this.push(self.transformChunk(chunk) + "\n");
+          const transformed = self.transformChunk(chunk);
+          if (transformed) {
+            this.push(transformed + "\n");
+          }
         } catch (e) {
           console.error(e);
         }
         callback();
       }
     });
+  }
+
+  sendPing() {
+    const obj = { type: "ping" };
+    this.saveSend(obj);
+    this.ws.send(JSON.stringify(obj));
+    obj.timeout = setTimeout(() => this.startRtm(), 5000);
   }
 
   requestApi(path, param, success, error) {
@@ -364,6 +385,14 @@ class Slacat {
     });
   }
 
+  startRtm() {
+    this.ws.close();
+    this.getTeamData(() => {
+      this.dumpTeamData();
+      this.createWebSocket(this.stream);
+    });
+  }
+
   createPrepareStream() {
     const self = this;
     return new require("stream").Transform({
@@ -425,16 +454,18 @@ class Slacat {
           }
         }
       };
+      const history = () => {
+        if (typeof channel == "string") {
+          self.getChannelsHistory(channel, transform);
+        }
+      };
       const func = {
         "channels_create": create,
         "groups_create": create,
-        "channels_history": () => {
-          if (typeof channel == "string") {
-            self.getChannelsHistory(channel, transform);
-          }
-        },
+        "channels_history": history,
         "activity_mentions": () => self.getActivityMentions(transform),
-        "thread_getview": () => self.getThreadView(transform)
+        "thread_getview": () => self.getThreadView(transform),
+        "rtm_start": () => self.startRtm()
       };
       if (func[obj.type]) {
         func[obj.type]();
@@ -449,39 +480,38 @@ class Slacat {
     return request;
   }
 
-  createWebSocket(stream) {
-    const ws = new (require("ws"))(this.url);
+  createWebSocket() {
+    this.ws = new (require("ws"))(this.url);
+    this.initSend();
     const prepare = this.createPrepareStream();
     const transform = this.createTransformStream();
     const request = this.createRequestStream(transform);
-    stream._write = (chunk, encoding, callback) => {
+    this.stream._write = (chunk, encoding, callback) => {
       prepare.write(chunk);
       callback();
     };
-    stream.once("finish", () => ws.close());
+    const onFinish = () => this.ws.close();
+    this.stream.once("finish", onFinish);
     prepare.pipe(request);
-    request.on("data", chunk => {
-      const obj = JSON.parse(chunk.toString());
-      if (obj.type == "rtm_start") {
-        ws.close();
-        this.getTeamData(() => {
-          this.dumpTeamData();
-          this.createWebSocket(stream);
-        });
-      } else {
-        ws.send(chunk.toString());
-      }
+    request.on("data", chunk => this.ws.send(chunk.toString()));
+    let ping;
+    this.ws.on("open", code => {
+      console.error("connection opened");
+      ping = setInterval(() => this.sendPing(), 10000);
     });
-    ws.on("message", data => transform.write(data + "\n"));
-    ws.on("close", code => {
+    this.ws.on("message", data => transform.write(data + "\n"));
+    this.ws.on("close", code => {
       console.error(`connection closed with code ${code}`);
+      clearInterval(ping);
+      this.stream.removeListener("finish", onFinish);
+      prepare.end();
       transform.end();
     });
-    transform.on("data", chunk => stream.push(chunk));
+    transform.on("data", chunk => this.stream.push(chunk));
   }
 
   createStream() {
-    const stream = new require("stream").Duplex({
+    this.stream = new require("stream").Duplex({
       read: () => {},
       write: (chunk, encoding, callback) => {
         console.error("not ready");
@@ -491,9 +521,9 @@ class Slacat {
     this.getTeamData(() => {
       this.dumpCommands();
       this.dumpTeamData();
-      this.createWebSocket(stream);
+      this.createWebSocket();
     });
-    return stream;
+    return this.stream;
   }
 
   getTeamData(callback) {
