@@ -450,45 +450,52 @@ class Slacat {
     });
   };
 
-  createRequestStream(transform) {
-    const self = this;
-    const request = new require("stream").Transform();
-    request._transform = function(chunk, encoding, callback) {
-      const obj = JSON.parse(chunk.toString());
-      const channel = obj.channel;
-      const create = () => {
-        if (typeof channel == "object") {
-          if (channel.name.startsWith("#")) {
-            self.createChannels(channel.name, () => self.getTeamData());
-          } else {
-            self.createGroups(channel.name, () => self.getTeamData());
-          }
-        }
-      };
-      const history = () => {
-        if (typeof channel == "string") {
-          self.getChannelsHistory(channel, transform);
-        }
-      };
-      const func = {
-        "channels_create": create,
-        "groups_create": create,
-        "channels_history": history,
-        "activity_mentions": () => self.getActivityMentions(transform),
-        "thread_getview": () => self.getThreadView(transform),
-        "rtm_start": () => self.startRtm()
-      };
-      if (func[obj.type]) {
-        func[obj.type]();
-      } else if (obj.type == "message" && obj.text.startsWith("/")) {
-        const text = obj.text.split(" ");
-        self.commandChat(channel, text.shift(), text.join(" "));
-      } else {
-        this.push(chunk);
+  requestChunk(chunk, stream) {
+    const channel = chunk.channel;
+    const create = () => {
+      if (typeof channel == "object") {
+        const key = channel.name.startsWith("#") ?
+          "createChannels" :
+          "createGroups";
+        this[key](channel.name, () => this.getTeamData());
       }
-      callback();
     };
-    return request;
+    const history = () => {
+      if (typeof channel == "string") {
+        this.getChannelsHistory(channel, stream);
+      }
+    };
+    const func = {
+      "channels_create": create,
+      "groups_create": create,
+      "channels_history": history,
+      "activity_mentions": () => this.getActivityMentions(stream),
+      "thread_getview": () => this.getThreadView(stream),
+      "rtm_start": () => this.startRtm()
+    };
+    if (func[chunk.type]) {
+      func[chunk.type]();
+      return true;
+    } else if (chunk.type == "message" && chunk.text.startsWith("/")) {
+      const text = chunk.text.split(" ");
+      this.commandChat(channel, text.shift(), text.join(" "));
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  createRequestStream(stream) {
+    const self = this;
+    return new require("stream").Transform({
+      transform: function(chunk, encoding, callback) {
+        const obj = JSON.parse(chunk.toString());
+        if (!self.requestChunk(obj, stream)) {
+          this.push(chunk);
+        }
+        callback();
+      }
+    });
   }
 
   createWebSocket() {
