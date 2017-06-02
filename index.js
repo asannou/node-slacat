@@ -127,15 +127,13 @@ class Slacat {
   }
 
   findUser(name) {
-    if (name.startsWith("@")) {
-      name = name.substr(1);
-      const user = this.team.users.find(user => user.name == name);
-      if (user) {
-        return user;
-      } else {
-        console.error(`@${name} not found`);
-        return;
-      }
+    name = name.substr(1);
+    const user = this.team.users.find(user => user.name == name);
+    if (user) {
+      return user;
+    } else {
+      console.error(`@${name} not found`);
+      return;
     }
   }
 
@@ -170,15 +168,25 @@ class Slacat {
 
   unresolveName(obj) {
     if (typeof obj.text == "string") {
-      const reUser = /(^|\s)@([-_.a-z0-9]+)/ig;
-      obj.text = obj.text.replace(reUser, (match, s, name) => {
-        const user = this.findUser(`@${name}`);
-        return user ? `${s}<@${user.id}>` : match;
+      const find = (name, func) => {
+        const found = name.startsWith("@") ?
+          func(name) :
+          this.findChannel(name);
+        return found && found.id;
+      }
+      const re = /(^|\s)([@#][-_.a-z0-9]+)/ig;
+      obj.text = obj.text.replace(re, (match, s, name) => {
+        const prefix = name.substr(0, 1);
+        const id = find(name, name => this.findUser(name));
+        return s + (id ? `<${prefix}${id}>` : name);
       });
-      const reChannel = /(^|\s)#([-_.a-z0-9]+)/ig;
-      obj.text = obj.text.replace(reChannel, (match, s, name) => {
-        const channel = this.findChannel(`#${name}`);
-        return channel ? `${s}<#${channel.id}>` : match;
+      const reUrl = new RegExp("(\.slack\.com/archives/)([@#]?[-_.a-z0-9]+)", "g");
+      obj.text = obj.text.replace(reUrl, (match, url, name) => {
+        const id = find(name, name => {
+          const user = this.findUser(name);
+          return user && this.findIm(user);
+        });
+        return url + (id || name);
       });
     }
   }

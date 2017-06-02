@@ -1,7 +1,14 @@
 #!/bin/sh
 
+if [ -n "$SLACK_TOKEN" ]
+then
+  domain=$(curl -s "https://slack.com/api/team.info?token=$SLACK_TOKEN" | jq -r '.team.domain')
+fi
+
+echo "$domain.slack.com" >&2
+
 channel=''
-echo '.channel .create .history .activity .threads .restart' >&2
+echo '.channel .create .history .activity .threads .restart .link' >&2
 
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
@@ -43,6 +50,10 @@ add_thread() {
   fi
 }
 
+convert_ts() {
+  jq -R -r --unbuffered '. | select(test("[0-9]{12}\\.[0-9]{6}")) | split(".") | ("p" + (.[0] | strptime("%y%m%d%H%M%S") | mktime | tostring) + .[1])'
+}
+
 while IFS='' read line
 do
   command=$(parse_command "$line")
@@ -71,6 +82,13 @@ do
   elif [ "$command" = '.restart' ]
   then
     jq -n -c --unbuffered '{ type: "rtm_start" }'
+  elif [ "$command" = '.link' ]
+  then
+    c=$(parse_arg "$line")
+    [ -z "$c" ] && c="$channel"
+    ts=$(parse_thread "$c" | convert_ts)
+    c=$(parse_channel "$c")
+    echo "https://$domain.slack.com/archives/$c/$ts" >&2
   else
     c=$(parse_channel "$channel")
     t=$(parse_thread "$channel")
