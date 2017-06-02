@@ -401,6 +401,28 @@ class Slacat {
     });
   }
 
+  prepareChunk(chunk, callback) {
+    this.unresolveName(chunk);
+    this.saveSend(chunk);
+    if (typeof chunk.channel == "object") {
+      const name = chunk.channel.name;
+      if (chunk.type == "message") {
+        this.openChannel(name, callback);
+      } else {
+        if (name.startsWith("@")) {
+          const user = this.findUser(name);
+          const im = user && this.findIm(user) || {};
+          callback(im.id);
+        } else {
+          const channel = this.findChannel(name) || {};
+          callback(channel.id);
+        }
+      }
+    } else {
+      callback();
+    }
+  }
+
   createPrepareStream() {
     const self = this;
     return new require("stream").Transform({
@@ -413,32 +435,13 @@ class Slacat {
           return callback();
         }
         if (typeof obj.type == "string") {
-          self.unresolveName(obj);
-          self.saveSend(obj);
-          const setChannel = id => {
+          self.prepareChunk(obj, id => {
             if (id) {
               obj.channel = id;
             }
             this.push(JSON.stringify(obj));
             callback();
-          };
-          if (typeof obj.channel == "object") {
-            const name = obj.channel.name;
-            if (obj.type == "message") {
-              self.openChannel(name, setChannel);
-            } else {
-              if (name.startsWith("@")) {
-                const user = self.findUser(name);
-                const im = user && self.findIm(user) || {};
-                setChannel(im.id);
-              } else {
-                const channel = self.findChannel(name) || {};
-                setChannel(channel.id);
-              }
-            }
-          } else {
-            setChannel();
-          }
+          });
         } else {
           console.error("invalid object");
           callback();
