@@ -1,15 +1,5 @@
 #!/bin/sh
 
-if [ -n "$SLACK_TOKEN" ]
-then
-  domain=$(curl -s "https://slack.com/api/team.info?token=$SLACK_TOKEN" | jq -r '.team.domain')
-fi
-
-echo "$domain.slack.com" >&2
-
-channel=''
-echo '.channel .create .history .activity .threads .restart .link' >&2
-
 parse() {
   echo "$1$2" | cut -d "$2" -f "$3"
 }
@@ -53,6 +43,15 @@ add_thread() {
 convert_ts() {
   jq -R -r --unbuffered '. | select(test("[0-9]{12}\\.[0-9]{6}")) | split(".") | ("p" + (.[0] | strptime("%y%m%d%H%M%S") | mktime | tostring) + .[1])'
 }
+
+if [ -n "$SLACK_TOKEN" ]
+then
+  domain=$(curl -s "https://slack.com/api/team.info?token=$SLACK_TOKEN" | jq -r '.team.domain')
+  echo "$domain.slack.com" >&2
+fi
+
+channel=''
+echo '.channel .create .history .activity .threads .restart .link' >&2
 
 while IFS='' read line
 do
