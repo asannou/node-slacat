@@ -1,4 +1,4 @@
-FROM node:alpine
+FROM asannou/library-node:alpine
 WORKDIR /usr/src/app
 COPY package.json .
 RUN apk --no-cache add curl jq
